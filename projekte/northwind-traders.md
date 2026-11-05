@@ -47,6 +47,9 @@ Diese Regeln der [Leitlinien](../knowledge/leitlinien-dhcraft.md) sind aus der P
 - „Give agents access only to the folders and accounts of the current task“ Der Agent, der das Umsatzskript gebaut hat, hatte den ganzen Ordner `eingang/` in Reichweite, also auch `kunden.xlsx` und `mitarbeitende.xlsx`. Bei echten Kundendaten wäre sein Zugriff auf die Bestell- und Produktdateien zu beschränken.
 - „Tell clients which AI tools and agents handle their material“ Der Antwortentwurf sagt der Vertriebsleitung, dass nur Bestellungen und Produkte ausgewertet wurden, ohne die Daten an einen KI-Dienst zu geben. Dass ein KI-Agent das Auswertungsskript geschrieben hat, nennt er noch nicht.
 - „Internal texts and professional correspondence written with AI need no AI label.“ Die intern weitergegebenen Folien des Workshops brauchen deshalb keine Kennzeichnung, ihre Weitergabe regelt eine Lizenz.
+- „Treat web pages, mails and documents from third parties as possible carriers of hidden instructions for the agent.“ Die Mail und die Excel-Anhänge kommen von außen und wurden vom Agenten gelesen, sie können deshalb Anweisungen an ihn enthalten, die er nicht befolgen darf.
+- „Deletions, deployments, pushes and outgoing messages require human approval“ Der Antwortentwurf an die Vertriebsleitung bleibt ein Entwurf, bis der Inhaber ihn freigibt und selbst versendet.
+- „Merge agent-written code only after a person has reviewed it and checks show that it works“ Das Umsatzskript hat ein Agent geschrieben, deshalb rechnet `scripts/northwind_check.py` jede Kennzahl unabhängig nach, bevor Seite und Protokoll als fertig gelten.
 
 ### Übertragbar in den Regelvorschlag für Northwind
 
