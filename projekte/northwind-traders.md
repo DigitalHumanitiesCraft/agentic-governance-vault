@@ -35,6 +35,24 @@ Die Anfrage ist gegen den [Governance-Entwurf](../knowledge/governance-entwurf.m
 - Auswertungen laufen lokal per Skript, ohne externen KI-Dienst.
 - Der Workshop ist eine Maßnahme zur KI-Kompetenz. Aus den Leitlinien von DHCraft übertragbar sind Datenklassen, Werkzeugregister, die Bindung an Auftragsverarbeiter und die Transparenzregeln.
 
+## Geltende Regeln
+
+Diese Regeln der [Leitlinien](../knowledge/leitlinien-dhcraft.md) sind aus der Prüfung gegen die Governance abgeleitet, getrennt nach Regeln, die DHCraft in diesem Projekt binden, und Regeln, die sich in den Regelvorschlag für Northwind übertragen lassen. Jeder Eintrag zitiert den Anfang der Regel wörtlich, `scripts/build_dashboard.py` ordnet ihn daran der Regel zu und meldet einen Fehler, wenn der Anfang auf keine oder auf mehrere Regeln passt.
+
+### Gilt für DHCraft in diesem Projekt
+
+- „Before an agent works with client data, document which service receives which data and in which role“ Würde DHCraft Kundendaten von Northwind auswerten, wäre es Auftragsverarbeiter, und Datenfluss und Rollen wären vorher festzuhalten.
+- „Check before each new agent use with personal data whether it needs its own legal basis“ Eine Auswertung der Kundendaten fiele in die Datenklasse „Personenbezogen“, für die vorher die Rechtsgrundlage zu prüfen ist.
+- „Send personal data only to services bound as processors.“ Erhielte DHCraft echte Kundendaten von Northwind, dürften sie nur an Dienste gehen, die als Auftragsverarbeiter gebunden sind.
+- „Give agents access only to the folders and accounts of the current task“ Der Agent, der das Umsatzskript gebaut hat, hatte den ganzen Ordner `eingang/` in Reichweite, also auch `kunden.xlsx` und `mitarbeitende.xlsx`. Bei echten Kundendaten wäre sein Zugriff auf die Bestell- und Produktdateien zu beschränken.
+- „Tell clients which AI tools and agents handle their material“ Der Antwortentwurf sagt der Vertriebsleitung, dass nur Bestellungen und Produkte ausgewertet wurden, ohne die Daten an einen KI-Dienst zu geben. Dass ein KI-Agent das Auswertungsskript geschrieben hat, nennt er noch nicht.
+- „Internal texts and professional correspondence written with AI need no AI label.“ Die intern weitergegebenen Folien des Workshops brauchen deshalb keine Kennzeichnung, ihre Weitergabe regelt eine Lizenz.
+
+### Übertragbar in den Regelvorschlag für Northwind
+
+- „Take measures that support the AI literacy of everyone who works with agents“ Der Workshop ist eine Maßnahme zur KI-Kompetenz, wie Northwind sie als Betreiber für sein Team unterstützen muss.
+- „Keep a register of approved AI tools and agents“ Das Werkzeugregister nennt die Prüfung als übertragbar, für Northwind etwa als Liste der zugelassenen Chatbots und Konten.
+
 ## Leistungen und Stand
 
 | Leistung | Stand | Unterlage |

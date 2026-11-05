@@ -25,6 +25,14 @@ related:
 
 %% Ergebnis der Prüfung gegen den Governance-Entwurf als knappe Zusammenfassung, Quelle ist das Protokoll. Ableitungen als Ableitungen kennzeichnen. %%
 
+## Geltende Regeln
+
+%% Zwei Gruppen: Regeln, die DHCraft im Projekt binden, und Regeln, die sich in einen Regelvorschlag für den Auftraggeber übertragen lassen. Leere Gruppen dürfen fehlen, Listenpunkte außerhalb der Gruppen meldet der Build als Fehler. Je Regel aus knowledge/leitlinien-dhcraft.md ein Listenpunkt. Er beginnt mit dem Anfang der Regel wörtlich in „…“, so lang, dass er nur auf diese eine Regel passt, und nennt danach in einem Satz, warum sie greift. `scripts/build_dashboard.py` ordnet jeden Punkt seiner Regel zu und schreibt die öffentlichen Daten nicht, wenn ein Anfang auf keine oder auf mehrere Regeln passt. %%
+
+### Gilt für DHCraft in diesem Projekt
+
+### Übertragbar in den Regelvorschlag für den Auftraggeber
+
 ## Leistungen und Stand
 
 %% Stand je Leistung, Unterlage als Markdown-Link. %%

@@ -10,6 +10,12 @@ related:
 ---
 # Journal
 
+## 2026-11-05 Arbeitsbereich beside the cards and rules linked to projects
+
+At the operator's request the dashboard gained a second view beside the cards. The Arbeitsbereich gathers the next steps of ACTIVE-WORK.md and of each project document with their origin, shows what is running and the open questions, and gives each client project a card with state, deliverables, open questions, decisions and the Northwind revenue figures as small bars. Project documents now name the rules they apply in a section "Geltende Regeln" by the opening words of a rule of leitlinien-dhcraft.md; the build resolves them and blocks the public data when an opening fits no rule or several, so rule and project panels link to each other. The rules are split into those that bind DHCraft in the project and those that carry over into the rule proposal for the client. A review found that publishing the Arbeitsbereich widens what is public without a decision of the operator, so the public build carries it only with `--public-work`. Built that way, its links point to the revenue page and the Beschlussvorlage on the site and to `ACTIVE-WORK.md` and the project documents in the public vault repository, never into its knowledge documents, notes or protocols.
+
+Evidence: the Playwright test over both builds via file:// passed with the new cases (view switch, history, keyboard, rule and project navigation, Northwind figures recomputed from the revenue data, widths down to 320 px), a fixture with ambiguous and missing rule openings blocked the public data, and the knowledge check and check_vault.py pass.
+
 ## 2026-11-05 One dashboard in card style and a public copy of the vault
 
 The internal dashboard and the public card workspace now share one frontend in the card style of the workspace. `dashboard/` holds the source, and `scripts/build_dashboard.py` copies it into `public/` with the public data, where controls without data are absent. The internal build adds the reader with full texts page by page, notes, protocols and project documents. `scripts/export_public_vault.py` copies the committed vault without the stored originals and the inbox into the repository `agentic-governance-vault`.

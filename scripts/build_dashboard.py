@@ -9,9 +9,11 @@ knowledge/quellen.md gives the metadata of every original in sources/; the
 originals (PDF text page by page, or Markdown), their summaries in
 sources/summaries/, the documents in knowledge/, the notes and protocols in
 notizen/ and protokolle/ and the project documents in projekte/ are read.
-Everything goes into dashboard/data.js for the local dashboard; a curated part
-(source metadata, summaries, the rules of the guidelines) goes into
-public/data.js. Both files share one schema, and one frontend (index.html,
+ACTIVE-WORK.md and projekte/ also feed the Arbeitsbereich, the second view
+beside the cards. Everything goes into dashboard/data.js for the local
+dashboard; a curated part (source metadata, summaries, the rules of the
+guidelines) goes into public/data.js, the Arbeitsbereich only with
+--public-work. Both files share one schema, and one frontend (index.html,
 app.js, style.css, assets/ in dashboard/) serves both: the build copies it
 into public/, so public/ stays a standalone folder. The frontend shows only
 what its data holds, so the public copy has no reader and no notes.
@@ -43,6 +45,20 @@ Design decisions:
 - Headings of documents get ids ("h-" and a slug), and a link to a section
   ("[[governance-entwurf#4 Datenklassen]]") carries that id, so the reader
   opens the document at the section.
+- The Arbeitsbereich is rendered once per build, because its links differ:
+  internally they open dashboard documents. Publicly a page the site serves
+  itself (the revenue page, the governance PDF) gets its site-relative link,
+  a file of the public vault repository outside knowledge/, protokolle/,
+  notizen/ and sources/ points there, and any other link becomes plain text.
+- Whether the Arbeitsbereich is public at all is the operator's decision
+  (CLAUDE.md), not yet taken; until then it enters public/data.js only with
+  --public-work. It is built and checked either way, so its errors show.
+- A project names the rules it applies in a section "Geltende Regeln", split
+  into the rules that bind DHCraft in the project and those that carry over
+  into the rule proposal for the client, each item quoting the opening words
+  of a rule of leitlinien-dhcraft.md. The build resolves them by prefix; an
+  opening that fits no rule or several is an error that blocks the public
+  data, so a changed wording is caught.
 
 Errors (an original without a row in quellen.md, a row without a file, a link
 that is no http(s) URL, an unreadable PDF, an unresolved internal link, a file
@@ -50,10 +66,13 @@ name used in two folders) are
 collected, printed at the end and make the exit code 1. The local data file is
 still written. The public data file and the frontend copy are written only
 when the public checks pass (no local link, no image, no link to a note or
-protocol, no path out of the folder in the frontend); otherwise the old files
-stay in place.
+protocol, no document other than a source, no vault link to a file the vault
+repository lacks or that leads into its knowledge/, protokolle/, notizen/
+or sources/, no link to knowledge/ or sources/ of the site, every project
+rule resolved and public, no path out of the folder in the frontend);
+otherwise the old files stay in place.
 
-Usage: uv run scripts/build_dashboard.py
+Usage: uv run scripts/build_dashboard.py [--public-work]
 """
 
 import html
@@ -71,6 +90,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 import markdown
 import pymupdf as fitz
+from export_public_vault import published
 from markdown.extensions import Extension
 from markdown.inlinepatterns import InlineProcessor
 
@@ -95,6 +115,47 @@ RULE_DOC_LABELS = {
 }  # in display order
 # Further local pages linked from the internal dashboard, if present.
 LOCAL_PAGES = (("northwind/index.html", "Northwind-Umsatz"),)
+# Pages beside the public build on the published site, whose root it forms
+# (repository agentic-governance-workspace, see public/README.md). They are not
+# part of public/, so these links work only on the site.
+BESCHLUSSVORLAGE = "material/DHCraft_Governance_AI_Agents_Beschlussvorlage_v1.0.pdf"
+PUBLIC_LINKS = (
+    (BESCHLUSSVORLAGE, "Beschlussvorlage (PDF)"),
+    ("material/DHCraft_Pitch_Regeln_fuer_AI_Agents.pptx", "Pitch (PPTX)"),
+    ("northwind/", "Northwind-Umsatz"),
+    ("https://github.com/DigitalHumanitiesCraft/agentic-governance-vault", "Vault"),
+    ("ueber.html", "Über diese Seite"),
+)
+# The Arbeitsbereich: the running state and the client projects.
+ACTIVE_WORK = ROOT / "ACTIVE-WORK.md"
+PROJECTS = ROOT / "projekte"
+# In the public build a link into the vault points to the file in the public
+# vault repository, which scripts/export_public_vault.py fills from the
+# committed files.
+VAULT_BLOB = (
+    "https://github.com/DigitalHumanitiesCraft/agentic-governance-vault/blob/main/"
+)
+SITE = "dhcraft.org/agentic-governance-workspace/"
+# Data panel of a project: its revenue page in dashboard/, the link to it in
+# the internal build and on the published site.
+PROJECT_DATA = {
+    "northwind-traders": ("northwind/data.js", "northwind/index.html", "northwind/")
+}
+# Vault files the published site serves itself: the public build links the
+# site page instead of the source file in the vault repository.
+SITE_PAGES = {
+    "knowledge/governance-entwurf.md": BESCHLUSSVORLAGE,
+    **{f"dashboard/{local}": site for _, local, site in PROJECT_DATA.values()},
+}
+# Folders of the vault repository the site does not link into: the governance
+# draft, the other knowledge documents, notes and protocols stay off the site
+# (CLAUDE.md), and so do the originals.
+OFF_SITE = ("knowledge/", "protokolle/", "notizen/", "sources/")
+# The two groups of "Geltende Regeln", by the start of their heading.
+RULE_SCOPES = (("Gilt für DHCraft", "dhcraft"), ("Übertragbar", "client"))
+TOP_ROWS = 5
+# A rule a project applies: the opening words of the rule in quotes, then why.
+APPLIED_RULE = re.compile(r"^[„\"](.+?)[“\"]\s*(.*)$", flags=re.S)
 
 SOURCE_COLUMNS = ("File", "Title", "Publisher", "Date", "Link", "Category")
 # Same split as scripts/check_kb.py: these documents make no claims.
@@ -602,7 +663,273 @@ def _knowledge_doc(
     return doc
 
 
-def build() -> tuple[dict, list[str]]:
+def _sections(text: str, level: int) -> dict[str, str]:
+    """Body of each heading of one level, by heading text, up to the next
+    heading of that level or above."""
+    out: dict[str, str] = {}
+    current = ""
+    for line in text.splitlines():
+        heading = re.match(r"(#{1,6}) (.+)", line)
+        if heading and len(heading.group(1)) <= level:
+            current = heading.group(2).strip() if len(heading.group(1)) == level else ""
+            if current:
+                out[current] = ""
+        elif current:
+            out[current] += line + "\n"
+    return out
+
+
+def _items(block: str) -> list[str]:
+    """Top-level list items of a Markdown block, continuation lines joined."""
+    items: list[str] = []
+    for line in block.splitlines():
+        if line.startswith(("- ", "* ")):
+            items.append(line[2:].strip())
+        elif items and line[:1] in (" ", "\t") and line.strip():
+            items[-1] += " " + line.strip()
+    return items
+
+
+def _github_slug(heading: str) -> str:
+    """Anchor GitHub gives a Markdown heading."""
+    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
+
+
+def _shared_files() -> frozenset[str]:
+    """Files of the public vault repository: committed, without originals and
+    inbox, as scripts/export_public_vault.py selects them."""
+    listing = subprocess.run(
+        ["git", "-c", "core.quotepath=off", "ls-files", "-z", "."],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    ).stdout.decode("utf-8")
+    return frozenset(f for f in listing.split("\0") if f and published(f))
+
+
+def _public_relink(fragment: str, base: Path, shared: frozenset[str]) -> str:
+    """Links of the public build: web links stay, a page the site serves gets
+    its site link, a file of the public vault repository outside OFF_SITE
+    points there, any other link becomes its text."""
+
+    def replace(match: re.Match[str]) -> str:
+        href, label = html.unescape(match.group(1)), match.group(2)
+        if re.match(r"https?://", href):
+            return f'<a href="{_attr(href)}" target="_blank" rel="noopener">{label}</a>'
+        target, _, fragment = href.partition("#")
+        path = (base / unquote(target)).resolve() if target else None
+        if path is None or not path.is_relative_to(ROOT):
+            return label
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in SITE_PAGES:
+            return f'<a href="{_attr(SITE_PAGES[rel])}">{label}</a>'
+        if rel not in shared or rel.startswith(OFF_SITE):
+            return label
+        url = VAULT_BLOB + quote(rel)
+        if fragment:
+            url += "#" + quote(_github_slug(unquote(fragment)))
+        return f'<a href="{_attr(url)}" target="_blank" rel="noopener">{label}</a>'
+
+    return ANCHOR.sub(replace, fragment)
+
+
+def _applied_rules(
+    block: str, rules: list[dict], where: str, errors: list[str]
+) -> list[tuple[str, str, str]]:
+    """Resolve the items of a section "Geltende Regeln" to rules of the
+    guidelines by their quoted opening words, each with the group of its
+    subsection. No match or several is an error, so a changed rule wording
+    does not silently drop the link, and so is an item outside a group."""
+    pool = [
+        (r["id"], " ".join(r["text"].split()))
+        for r in rules
+        if r["ruleDoc"] == PUBLIC_RULES
+    ]
+    if _items(re.split(r"^### ", block, maxsplit=1, flags=re.M)[0]):
+        errors.append(
+            f"{where}: rule items outside the subsections "
+            + " and ".join(f"'{start} ...'" for start, _ in RULE_SCOPES)
+        )
+    out = []
+    for heading, body in _sections(block, 3).items():
+        scope = next((s for start, s in RULE_SCOPES if heading.startswith(start)), "")
+        if not scope:
+            errors.append(f"{where}: unknown rule group '{heading}'")
+            continue
+        out += [
+            (rid, why, scope) for rid, why in _match_rules(body, pool, where, errors)
+        ]
+    return out
+
+
+def _match_rules(
+    block: str, pool: list[tuple[str, str]], where: str, errors: list[str]
+) -> list[tuple[str, str]]:
+    out = []
+    for item in _items(block):
+        match = APPLIED_RULE.match(item)
+        if not match:
+            errors.append(
+                f"{where}: rule item without opening words in quotes: {item[:60]}"
+            )
+            continue
+        prefix = " ".join(match.group(1).split())
+        hits = [rid for rid, text in pool if text.startswith(prefix)]
+        if len(hits) != 1:
+            errors.append(
+                f"{where}: opening words '{prefix[:70]}' match {len(hits)} "
+                "rules of leitlinien-dhcraft.md instead of one"
+            )
+            continue
+        out.append((hits[0], match.group(2).strip()))
+    return out
+
+
+def _figures(spec: tuple[str, str, str], scope: str) -> dict | None:
+    """Key figures and top rows of a project's revenue data, sums only."""
+    data_file, local_page, site_page = spec
+    path = DASHBOARD / data_file
+    if not path.is_file():
+        return None
+    found = re.search(r"=\s*(\{.*\});\s*$", path.read_text(encoding="utf-8"), re.S)
+    if not found:
+        return None
+    data = json.loads(found.group(1))
+    countries: Counter[str] = Counter()
+    products: Counter[str] = Counter()
+    for _, country, product, value in data["cells"]:
+        countries[data["countries"][country]] += value
+        products[data["products"][product][0]] += value
+
+    def top(counter: Counter[str]) -> list[list]:
+        rows = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        return [[name, round(value, 2)] for name, value in rows[:TOP_ROWS]]
+
+    return {
+        "total": data["total"],
+        "orders": data["orders"],
+        "unshipped": data["unshipped"],
+        "first": data["first"],
+        "last": data["last"],
+        "countries": top(countries),
+        "products": top(products),
+        "page": local_page if scope == "internal" else site_page,
+    }
+
+
+def build_work(
+    rules: list[dict], files: dict[str, Path], link, scope: str, errors: list[str]
+) -> dict:
+    """The Arbeitsbereich: ACTIVE-WORK.md and the documents in projekte/.
+
+    `link(fragment, base)` resolves the links of rendered text for the build.
+    Texts are rendered once per build, so each build carries its own links.
+    """
+
+    def inline(text: str, base: Path) -> str:
+        rendered = _render(_wikilinks(text, base, files)).strip()
+        return link(re.sub(r"\A<p>(.*)</p>\Z", r"\1", rendered, flags=re.S), base)
+
+    def file_link(path: Path, label: str) -> str:
+        rel = path.relative_to(ROOT).as_posix()
+        return link(f'<a href="{_attr(rel)}">{html.escape(label)}</a>', ROOT)
+
+    no_comments = lambda text: re.sub(r"%%.*?%%", "", text, flags=re.S)  # noqa: E731
+    active = no_comments(_strip_frontmatter(ACTIVE_WORK.read_text(encoding="utf-8")))
+    top = _sections(active, 2)
+    # State and next step of each project, keyed by its project document.
+    entries: dict[str, dict[str, str]] = {}
+    for block in _sections(top.get("Projekte", ""), 3).values():
+        fields = dict(item.split(": ", 1) for item in _items(block) if ": " in item)
+        doc = WIKILINK.search(fields.get("Projektdokument", ""))
+        if doc:
+            entries[doc.group(1).strip().lower()] = fields
+
+    todos = [
+        {
+            "from": "Laufende Arbeit",
+            "where": file_link(ACTIVE_WORK, "ACTIVE-WORK.md"),
+            "project": "",
+            "items": [inline(i, ROOT) for i in _items(top.get("Nächste Schritte", ""))],
+        }
+    ]
+    projects = []
+    for path in sorted(PROJECTS.glob("*.md")):
+        raw = path.read_text(encoding="utf-8")
+        front = re.match(r"\A---\n(.*?)\n---\n", raw, flags=re.S)
+        status = (
+            re.search(r"^status:[ \t]*(\S[^\n]*)$", front.group(1), re.M)
+            if front
+            else None
+        )
+        text = no_comments(_strip_frontmatter(raw))
+        heading = re.search(r"^# (.+)$", text, flags=re.M)
+        title = heading.group(1).strip() if heading else path.stem
+        sec = _sections(text, 2)
+        entry = entries.get(path.stem.lower(), {})
+        rows = _table_rows(sec.get("Leistungen und Stand", ""))[1:]
+        where = path.relative_to(ROOT).as_posix()
+        project = {
+            "id": path.stem,
+            "title": title,
+            "link": file_link(path, title),
+            "status": status.group(1).strip().strip('"') if status else "",
+            "state": inline(entry["Stand"], ROOT) if "Stand" in entry else "",
+            "next": inline(entry["Nächster Schritt"], ROOT)
+            if "Nächster Schritt" in entry
+            else "",
+            "deliverables": [
+                {
+                    "name": inline(cells[0], path.parent),
+                    "state": inline(cells[1], path.parent) if len(cells) > 1 else "",
+                    "refs": inline(cells[2], path.parent) if len(cells) > 2 else "",
+                }
+                for cells in rows
+                if cells and cells[0]
+            ],
+            "decisions": [
+                inline(i, path.parent) for i in _items(sec.get("Entscheidungen", ""))
+            ],
+            "questions": [
+                inline(i, path.parent)
+                for i in _items(sec.get("Offene Fragen an den Auftraggeber", ""))
+            ],
+            "owner": [
+                inline(i, path.parent)
+                for i in _items(sec.get("Offen beim Inhaber", ""))
+            ],
+            "rules": [
+                {"id": rid, "why": inline(why, path.parent), "scope": scope}
+                for rid, why, scope in _applied_rules(
+                    sec.get("Geltende Regeln", ""), rules, where, errors
+                )
+            ],
+            "data": _figures(PROJECT_DATA[path.stem], scope)
+            if path.stem in PROJECT_DATA
+            else None,
+        }
+        projects.append(project)
+        steps = [
+            inline(i, path.parent) for i in _items(sec.get("Nächste Schritte", ""))
+        ]
+        if steps:
+            todos.append(
+                {
+                    "from": title,
+                    "where": file_link(path, "Projektdokument"),
+                    "project": path.stem,
+                    "items": steps,
+                }
+            )
+    return {
+        "todos": todos,
+        "running": [inline(i, ROOT) for i in _items(top.get("Was läuft", ""))],
+        "questions": [inline(i, ROOT) for i in _items(top.get("Offene Fragen", ""))],
+        "projects": projects,
+    }
+
+
+def build() -> tuple[dict, list[str], dict, list[str]]:
     errors: list[str] = []
     meta = _source_rows(errors)
     originals = sorted(
@@ -694,6 +1021,26 @@ def build() -> tuple[dict, list[str]]:
         for href, label in LOCAL_PAGES
         if (DASHBOARD / href).is_file()
     ]
+    # The rule links of the projects are checked once; their errors block
+    # the public data, so a changed rule wording cannot reach the site.
+    work_errors: list[str] = []
+    work = build_work(
+        rules,
+        files,
+        lambda fragment, base: _relink(
+            fragment, base, targets, errors, "Arbeitsbereich"
+        ),
+        "internal",
+        work_errors,
+    )
+    shared = _shared_files()
+    public_work = build_work(
+        rules,
+        files,
+        lambda fragment, base: _public_relink(fragment, base, shared),
+        "public",
+        [],
+    )
     data = {
         "scope": "internal",
         "generated": datetime.now(tz=UTC).date().isoformat(),
@@ -702,8 +1049,9 @@ def build() -> tuple[dict, list[str]]:
         "links": links,
         "docs": docs,
         "rules": rules,
+        "work": work,
     }
-    return data, errors
+    return data, errors, public_work, work_errors
 
 
 def _abstract(summary: str, lead: bool = False) -> str:
@@ -730,14 +1078,20 @@ def _abstract(summary: str, lead: bool = False) -> str:
     return out or text
 
 
-def build_public(data: dict) -> tuple[dict, list[str]]:
+def build_public(
+    data: dict, work: dict, work_errors: list[str], with_work: bool
+) -> tuple[dict, list[str]]:
     """Curated data for the public copy of the dashboard in public/.
 
     Same schema as the internal data. Public are the source metadata, the
-    summaries (own text), the rules of leitlinien-dhcraft.md and links to the
-    originals at their publishers. Not public are the stored originals and
-    their full text, the governance draft, the other knowledge documents,
-    notes and protocols, and the position of a rule in its document.
+    summaries (own text), the rules of leitlinien-dhcraft.md, links to the
+    originals at their publishers, and with `with_work` the Arbeitsbereich
+    (running state and project documents, which the public vault repository
+    holds as well). Not public are the stored originals and their full text,
+    the governance draft, the other knowledge documents, notes and protocols
+    as documents, and the position of a rule in its document. The
+    Arbeitsbereich is checked even when it stays out, and errors in the rule
+    links of the projects block the public data.
     """
     rules = [
         {
@@ -753,7 +1107,7 @@ def build_public(data: dict) -> tuple[dict, list[str]]:
         for rule in data["rules"]
         if rule["ruleDoc"] == PUBLIC_RULES and rule["field"] in PUBLIC_FIELDS
     ]
-    errors: list[str] = []
+    errors: list[str] = list(work_errors)
     sources = []
     for doc in data["docs"]:
         if doc["kind"] != "source":
@@ -793,14 +1147,52 @@ def build_public(data: dict) -> tuple[dict, list[str]]:
         "generated": data["generated"],
         "fields": data["fields"],
         "ruleDocs": [d for d in data["ruleDocs"] if d["id"] == PUBLIC_RULES],
-        "links": [],
+        "links": [{"href": href, "label": label} for href, label in PUBLIC_LINKS],
         "docs": sources,
         "rules": rules,
     }
-    text = json.dumps(payload, ensure_ascii=False)
+    if with_work:
+        payload["work"] = work
+    text = json.dumps({**payload, "work": work}, ensure_ascii=False)
+    public_ids = {rule["id"] for rule in rules}
+    errors += [
+        f"public: project {p['id']} applies {r['id']}, which is not public"
+        for p in work["projects"]
+        for r in p["rules"]
+        if r["id"] not in public_ids
+    ]
+    errors += [
+        f"public data contains a {doc['kind']} as document: {doc['id']}"
+        for doc in payload["docs"]
+        if doc["kind"] != "source"
+    ]
+    if "data-doc=" in json.dumps(work, ensure_ascii=False):
+        errors.append(
+            "public: the Arbeitsbereich links to a document of the private base"
+        )
+    # Links into the vault repository must name a file it holds, outside the
+    # folders the site does not link into; no link may lead to knowledge/ or
+    # sources/ files of the site.
+    shared = _shared_files()
+    for m in re.finditer(r'href=\\"([^"\\]*)', text):
+        href = m.group(1)
+        if href.startswith(VAULT_BLOB):
+            rel = unquote(href[len(VAULT_BLOB) :].split("#", 1)[0])
+            if rel not in shared:
+                errors.append(
+                    f"public: link to {rel}, which the vault repository does not hold"
+                )
+            elif rel.startswith(OFF_SITE):
+                errors.append(f"public: link into {rel}, which stays off the site")
+        elif re.search(re.escape(SITE) + r"(?:knowledge|sources)/", href):
+            errors.append(
+                f"public: link to a knowledge or source file of the site {href}"
+            )
+    # The only relative links are the pages the site serves beside the build.
     errors += [
         f"public data contains a local link {m.group(0)}"
-        for m in re.finditer(r'href=\\"(?!https?:)[^"\\]*', text)
+        for m in re.finditer(r'href=\\"((?!https?:)[^"\\]*)', text)
+        if m.group(1) not in SITE_PAGES.values()
     ]
     errors += [
         f"public data contains an image {m.group(0)}"
@@ -834,8 +1226,9 @@ def _write(path: Path, name: str, data: dict) -> None:
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
-    data, errors = build()
-    public, public_errors = build_public(data)
+    with_work = "--public-work" in sys.argv[1:]
+    data, errors, public_work, work_errors = build()
+    public, public_errors = build_public(data, public_work, work_errors, with_work)
     errors += public_errors
     if public_errors:
         print(f"{PUBLIC_OUT.relative_to(ROOT)} not written, see the errors below")
@@ -844,7 +1237,8 @@ def main() -> int:
         _copy_frontend()
         print(
             f"{PUBLIC_OUT.relative_to(ROOT)}: {len(public['docs'])} sources, "
-            f"{len(public['rules'])} rules; frontend copied from dashboard/"
+            f"{len(public['rules'])} rules, Arbeitsbereich "
+            f"{'included' if with_work else 'left out'}; frontend copied from dashboard/"
         )
     _write(OUT, "KB_DATA", data)
     kinds = Counter(doc["kind"] for doc in data["docs"])
