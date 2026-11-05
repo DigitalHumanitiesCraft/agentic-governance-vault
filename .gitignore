@@ -1,0 +1,13 @@
+output/
+dashboard/data.js
+dashboard/northwind/data.js
+public/data.js
+.obsidian/workspace*.json
+.obsidian/cache
+.obsidian/.obsidian/
+.obsidian/graph.json
+.obsidian/appearance.json
+eingang/*
+!eingang/README.md
+.claude/launch.json
+__pycache__/

@@ -1,0 +1,12 @@
+{
+  "userIgnoreFilters": [
+    "output/",
+    "dashboard/",
+    "public/",
+    ".ruff_cache/",
+    ".claude/"
+  ],
+  "newFileLocation": "folder",
+  "newFileFolderPath": "notizen",
+  "alwaysUpdateLinks": true
+}

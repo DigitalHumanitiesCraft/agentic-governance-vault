@@ -1,0 +1,50 @@
+filters:
+  or:
+    - file.inFolder("knowledge")
+    - file.inFolder("notizen")
+    - file.inFolder("protokolle")
+    - file.inFolder("projekte")
+views:
+  - type: table
+    name: Alle Dokumente
+    filters:
+      not:
+        - file.inFolder("notizen/_vorlagen")
+    order:
+      - file.name
+      - type
+      - language
+      - tags
+      - file.mtime
+  - type: table
+    name: Persönliche Notizen
+    filters:
+      and:
+        - file.hasTag("bereich/persoenlich")
+        - not:
+            - file.inFolder("notizen/_vorlagen")
+    order:
+      - file.name
+      - tags
+      - file.mtime
+  - type: table
+    name: Projekte
+    filters:
+      and:
+        - file.inFolder("projekte")
+    order:
+      - file.name
+      - status
+      - related
+      - file.mtime
+  - type: table
+    name: Protokolle und Angebote
+    filters:
+      and:
+        - file.inFolder("protokolle")
+        - not:
+            - file.inFolder("notizen/_vorlagen")
+    order:
+      - file.name
+      - related
+      - file.mtime
